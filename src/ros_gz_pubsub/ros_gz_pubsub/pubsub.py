@@ -33,11 +33,13 @@ class PublisherSubscriber(Node):
         super().__init__('publisher_subscriber')
         self.publisher_ = self.create_publisher(Twist, '/diff_drive/cmd_vel', 10)
         self.subscriber_ = self.create_subscription(LaserScan, '/diff_drive/scan', self.listener_callback, 10)
-        timer_period = 0.5  # seconds
-        self.timer = self.create_timer(timer_period, self.timer_callback)
+        self.timer_period = 0.5  # seconds
+        self.timer = self.create_timer(self.timer_period, self.timer_callback)
         self.i = 0
         self.linear_velocity = 0.0
         self.angular_velocity = 0.0
+        self.previous_forward = 0.0
+        self.previous_left = 0.0
 
     def timer_callback(self):
         new_msg = Twist()
@@ -51,19 +53,27 @@ class PublisherSubscriber(Node):
         new_ranges = []
         new_ranges = msg.ranges
         
-        mini = msg.range_min
-        maxi = msg.range_max
+        cutoff_freq = .3
 
-        if new_ranges[len(new_ranges) - 1] <= 5.0 or new_ranges[0] <= 1.0:
+        beta = (2 * math.pi * cutoff_freq * self.timer_period) / (2 * math.pi * self.timer_period + 1)
+
+        left = (beta * self.previous_left) + ((1 - beta) * new_ranges[len(new_ranges) - 1])
+
+        beta = (2 * math.pi * cutoff_freq * self.timer_period) / (2 * math.pi * self.timer_period + 1)
+        forward = (beta * self.previous_forward) + ((1 - beta) * new_ranges[0])
+
+        if left <= 5.0 or forward <= 1.0:
             self.linear_velocity = 0.0
             self.angular_velocity = -.25
-        elif new_ranges[len(new_ranges) - 1] >= 7.5 and new_ranges[0] > 1.0:
+        elif left > 7.5 and forward > 1.0:
             self.linear_velocity = 0.0
             self.angular_velocity = .25
         else:
             self.linear_velocity = 1.0
             self.angular_velocity = 0.0
 
+        self.previous_forward = new_ranges[0]
+        self.previous_left = new_ranges[len(new_ranges) - 1]
        
 def main(args=None):
     rclpy.init(args=args)
